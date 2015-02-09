@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html ng-app="myApp">
+  <head>
+    <style type="text/css">
+      html, body, #map-canvas { height: 100%; margin: 0; padding: 0;}
+    </style>
+    <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css">
+    <script type="text/javascript" src="https://code.jquery.com/jquery-2.1.3.min.js"></script>
+    <script type="text/javascript" src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.27/angular.min.js"></script>
+    <script type="text/javascript"
+      src="https://maps.googleapis.com/maps/api/js?v=3.exp&key=AIzaSyC2UEBUtxiduVib15XN-NaypReXAbz0S2c">
+    </script>
+    <script type="text/javascript">
+      angular.module('myApp', [])
+        .controller('myCtrl', function ($scope, $window, $http) {
+          $scope.radius = 10;
+          $scope.markers = [];
+          $scope.routes = [];
+          $scope.travelTime = 30;
+          $scope.departTime = '09:00';
+          $scope.travelDirection = 'go';
+          $scope.realTime = new Date();
+
+          $scope.$watch('departTime', function (val) {
+            $scope.realTime.setHours(val.substr(0, 2));
+            $scope.realTime.setMinutes(val.substr(3, 2));
+          });
+
+          $scope.drawMarkers = function () {
+            $scope.map = $window.map;
+            angular.forEach($window.coords, function (v, k) {
+              var marker = new google.maps.Marker({
+                position: v, 
+                label: v.label,
+                draggable:true,
+                animation: google.maps.Animation.DROP,
+                map: $scope.map
+              });
+
+              // draw radius
+              google.maps.event.addListener(marker, 'dragend', function(event) {
+                drawRadius(this);
+              });
+              // select marker
+              google.maps.event.addListener(marker, 'click', function(event) {
+                selectMarker(this);
+              });
+
+              this.push(marker);
+
+              $scope.drawRadius(marker);
+            }, $scope.markers);
+
+            $scope.$apply();
+          };
+
+          $scope.drawRadius = function (marker) {
+            var opt = {
+              map: $scope.map,
+              center: marker.position,
+              radius: $scope.radius * 1000,
+              strokeColor: '#FF0000',
+              strokeOpacity: 0.3,
+              strokeWeight: 1,
+              fillColor: '#FF0000',
+              fillOpacity: 0.2,
+            };
+
+            if (marker.circle) {
+              marker.circle.setMap(null);
+            }
+
+            marker.circle = new google.maps.Circle(opt);
+
+            google.maps.event.addListener(marker.circle, 'click', function(event) {
+               placeMarker(event.latLng);
+            });
+
+            $scope.$apply();
+          }
+
+          $scope.calcDistance = function () {
+            var origins = [], dest = [$window.dest.position.toUrlValue()];
+
+            angular.forEach($scope.markers, function (v) {
+              this.push(v.position.toUrlValue());
+            }, origins);
+            // opt.params.origins = origins.join('|');
+            // console.log(opt);
+
+            var service = new google.maps.DistanceMatrixService();
+
+            if ($scope.travelDirection != 'go') {
+              var tmp = origins;
+              origins = dest;
+              dest = tmp;
+            }
+
+            service.getDistanceMatrix(
+            {
+              origins: origins,
+              destinations: dest,
+              durationInTraffic: true,
+              travelMode: google.maps.TravelMode.DRIVING
+            }, function (res, stt) {
+              console.log(res);
+              $scope.dest = $scope.travelDirection == 'go' ? res.destinationAddresses[0] : res.originAddresses[0];
+              $scope.routes.length = 0;
+              if ($scope.travelDirection == 'go') {
+                angular.forEach(res.rows, function (v, k) {
+                  $scope.markers[k].distance = v.elements[0].distance;
+                  $scope.markers[k].duration = v.elements[0].duration;
+                });
+              } else {
+                angular.forEach(res.rows[0].elements, function (v, k) {
+                  $scope.markers[k].distance = v.distance;
+                  $scope.markers[k].duration = v.duration;
+                });
+              }
+              // console.log($scope.markers);
+              $scope.$apply();
+            });
+            // $http.jsonp('https://maps.googleapis.com/maps/api/distancematrix/json', opt).then(function (res) {
+            //   console.log(res);
+            // }, function (err) {
+            //   console.log(err);
+            // });
+          };
+        });
+
+
+      var map, markers = [], r = 10000, coords = [
+        {lat: 3.052550262945649, lng: 101.65399432182312, label: 'Bryan' },
+        {lat: 3.1410945908797294, lng: 101.61280632019043, label: 'Kenzo' },
+        {lat: 3.0833407441902425, lng: 101.41273498535156, label: 'Kent' },
+        {lat: 3.1309603111471387, lng: 101.62568092346191, label: 'Kikky' },
+        {lat: 3.1662263224705303, lng: 101.5850830078125, label: 'Kota Dsara' },
+        {lat: 3.0769234554608706, lng: 101.60945892333984, label: 'Sunway' },
+        {lat: 3.0097271021517504, lng: 101.43367767333984, label: 'Bkt Tinggi' },
+        {lat: 3.078166205546068, lng: 101.54590129852295, label: 'Batu Tiga' }
+      ], dest, __scope;
+
+      function initialize() {
+        var mapOptions = {
+          center: { lat: 3.0928169, lng: 101.5991468},
+          zoom: 11
+        };
+        map = new google.maps.Map(document.getElementById('map-canvas'),
+            mapOptions);
+
+        google.maps.event.addListener(map, 'click', function(event) {
+           placeMarker(event.latLng);
+        });
+
+        __scope = angular.element($('[ng-controller]')).scope();
+        __scope.drawMarkers();
+      }
+
+      function placeMarker(location) {
+        if (dest) {
+          dest.setMap(null);
+        }
+
+        dest = new google.maps.Marker({
+            position: location, 
+            animation: google.maps.Animation.DROP,
+            map: map,
+            icon: 'http://maps.google.com/mapfiles/ms/micons/blue.png'
+        });
+
+        __scope.calcDistance();
+      }
+
+      function drawRadius(marker) {
+        __scope.drawRadius(marker);
+      }
+
+      function selectMarker(marker) {
+        __scope.$apply(function () {
+          angular.forEach(__scope.markers, function (v, k) {
+            v.selected = v.label !== marker.label ? false : true;
+          });
+        });
+      }
+
+      google.maps.event.addDomListener(window, 'load', initialize);
+    </script>
+  </head>
+  <body ng-controller="myCtrl">
+    <div class="pull-left col-sm-4">
+      <div class="">
+        <div class="form-group">
+          <label>Maximum Distance (km)</label>
+          <input type="number" class="form-control" ng-model="radius" />
+        </div>
+        <div class="form-group">
+          <label>Maximum Travel Time (min)</label>
+          <input type="number" class="form-control" ng-model="travelTime" />
+        </div>
+        <!-- <div class="form-group">
+          <label>Departure Time</label>
+          <input type="time" class="form-control" ng-model="departTime" />
+        </div> -->
+        <div class="form-group">
+          <label class="radio-inline">
+            <input type="radio" name="direction" class="" ng-model="travelDirection" value="go" /> Go to Office
+          </label>
+          <label class="radio-inline">
+            <input type="radio" name="direction" class="" ng-model="travelDirection" value="back" /> Back from Office
+          </label>
+        </div>
+        <fieldset ng-show="dest">
+          <legend>Destination</legend>
+          {{dest}}
+          <!-- <ul>
+            <li ng-repeat="route in routes">
+              <h2>{{markers[$index].label}}</h2>
+              <p>{{route.distance}} ({{route.duration}})
+            </li>
+          </ul> -->
+        </fieldset>
+        <fieldset>
+          <legend>Markers</legend>
+          <ul class="list-unstyled">
+            <li ng-repeat="marker in markers" class="form-inline">
+              <div class="form-group">
+                <input type="radio" ng-checked="marker.selected" />
+                <input type="text" class="form-control input-sm" ng-model="marker.label" />
+                <span ng-class="{'bg-danger text-danger': marker.distance.value > (radius * 1000)}">{{marker.distance.text}}</span> <span ng-class="{'bg-danger text-danger': marker.duration.value > (travelTime * 60)}">({{marker.duration.text}})</span>
+              </div>
+            </li>
+          </ul>
+          <!-- <div class="row" ng-repeat="marker in markers">
+            <div class="col-sm-4">
+              <input type="text" class="form-control input-sm" ng-model="marker.label" />
+            </div>
+            <div class="col-sm-8">
+              {{marker.position.toUrlValue()}}
+            </div>
+          </div> -->
+        </fieldset>
+      </div>
+    </div>
+    <h4 class="text-muted text-center">Click anywhere on map to set your destination</h4>
+    <div id="map-canvas"></div>
+  </body>
+</html>
